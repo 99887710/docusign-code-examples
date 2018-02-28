@@ -18,7 +18,7 @@ All of the code examples make use of the DocuSign open source SDKs, which are fr
 Code Examples
 =============
 
-The samples all point to the DocuSign demo enviroment so you can use your free developer sandbox for testing. Most of the samples have variables such as auth keys or email address that need substituting of real values before running.
+The samples all point to the DocuSign demo environment so you can use your free developer sandbox for testing. Most of the samples have variables such as auth keys or email address that need substituting of real values before running.
 
 Examples currently exist in the following languages with additional ones in development:
 
