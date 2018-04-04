@@ -1,7 +1,7 @@
 const express = require('express');
 const passport = require('passport');
 var session = require('express-session');
-var docusign = require('./src/index');
+var docusign = require('docusign-esign');
 
 const app = express();
 const port = process.env.PORT || 3000;
