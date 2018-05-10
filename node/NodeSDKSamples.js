@@ -1,238 +1,332 @@
-const express = require('express');
-const passport = require('passport');
-var session = require('express-session');
-var docusign = require('docusign-esign');
+const express = require('express')
+    , passport = require('passport')
+    , session = require('express-session')
+    , docusign = require('docusign-esign')
+    , moment = require('moment')
+    , fs = require('fs')
+    , path = require('path')
+    , {promisify} = require('util') // http://2ality.com/2017/05/util-promisify.html
+    ;
 
-const app = express();
-const port = process.env.PORT || 3000;
-const host = process.env.HOST || 'localhost';
+const app = express()
+    , port = process.env.PORT || 3000
+    , host = process.env.HOST || 'localhost'
+    , hostUrl = 'http://' + host + ':' + port
+    , clientID = process.env.DS_CLIENT_ID || '{CLIENT_ID}'
+    , clientSecret = process.env.DS_CLIENT_SECRET || '{CLIENT_SECRET}'
+    , signerEmail = process.env.DS_SIGNER_EMAIL || '{USER_EMAIL}'
+    , signerName = process.env.DS_SIGNER_NAME || '{USER_NAME}'
+    , baseUriSuffix = '/restapi'
+    , testDocumentPath = '../demo_documents/test.pdf'
+    ;
+
+let apiClient // The DocuSign API object
+  , accountId // The DocuSign account that will be used
+  , baseUri // the DocuSign platform base uri for the account.
+  ;
 
 app.use(session({
   secret: 'secret token',
   resave: true,
   saveUninitialized: true
 }));
-
 app.use(passport.initialize());
 app.use(passport.session());
 
-var hostUrl = 'http://' + host + ':' + port;
-
 // Configure Passport
 passport.use(new docusign.OAuthClient({
-  sandbox: true,
-  clientID: '{CLIENT_ID}',
-  clientSecret: '{CLIENT_SECRET}',
-  callbackURL: hostUrl + '/auth/callback'
-},
-  function (accessToken, refreshToken, user, done) {
+    sandbox: true,
+    clientID: clientID,
+    clientSecret: clientSecret,
+    callbackURL: hostUrl + '/auth/callback',
+    state: true // automatic CSRF protection.
+    // See https://github.com/jaredhanson/passport-oauth2/blob/master/lib/state/session.js
+  },
+  function (accessToken, refreshToken, params, user, done) {
+    // The params arg will be passed additional parameters of the grant.
+    // See https://github.com/jaredhanson/passport-oauth2/pull/84
+    //
     // Here we're just assigning the tokens to the user profile object but we
     // could be using session storage or any other form of transient-ish storage
     user.accessToken = accessToken;
     user.refreshToken = refreshToken;
+    user.expiresIn = params.expires_in;
     return done(null, user);
   }
 ));
 
-app.get('/auth', function (req, res) {
-  passport.authenticate('docusign'/*, {state: 'optional state'}*/)(req, res);
+// Passport session setup.
+//   To support persistent login sessions, Passport needs to be able to
+//   serialize users into and deserialize users out of the session.  Typically,
+//   this will be as simple as storing the user ID when serializing, and finding
+//   the user by ID when deserializing.  However, since this example does not
+//   have a database of user records, the complete GitHub profile is serialized
+//   and deserialized.
+passport.serializeUser(function(user, done) {done(null, user)});
+passport.deserializeUser(function(obj, done) {done(null, obj)});
+
+app.get('/', function (req, res) {
+  res.send('<h2>Home page</h2><h2><a href="/auth">Authenticate and run the example</a></h2');
 });
 
-app.get('/auth/callback', function (req, res) {
-  passport.authenticate('docusign'/*, {state: 'optional state'}*/, function (err, user) {
+app.get('/auth', function (req, res, next) {
+  passport.authenticate('docusign')(req, res, next);
+});
+
+app.get('/auth/callback', [dsLoginCB1, dsLoginCB2]);
+
+if (clientID === '{CLIENT_ID}') {
+  console.log(`PROBLEM: You need to set the Client_ID (Integrator Key), and perhaps other settings as well. You can set them in the source or set environment variables.`);
+} else {
+  app.listen(port, host, function (err) {
     if (err) {
-      return res.send(err);
+      throw err;
     }
-    if (!user) {
-      return res.redirect('/auth');
+    console.log(`Ready! Open ${hostUrl}`);
+  });
+}
+
+function dsLoginCB1 (req, res, next) {
+  passport.authenticate('docusign', { failureRedirect: '/auth' })(req, res, next)
+}
+
+function dsLoginCB2 (req, res, next) {
+  // getting the API client ready
+  apiClient = new docusign.ApiClient();
+  console.log(`Received access_token: ${req.user.accessToken.substring(0,15)}...`);
+  let expires = moment().add(req.user.expiresIn, 's');
+  console.log(`Expires at ${expires.format("dddd, MMMM Do YYYY, h:mm:ss a")}`);
+  apiClient.addDefaultHeader('Authorization', 'Bearer ' + req.user.accessToken);
+
+  // The DocuSign Passport strategy looks up the user's account information via OAuth::userInfo.
+  // See https://developers.docusign.com/esign-rest-api/guides/authentication/user-info-endpoints
+  // We want the user's account_id, account_name, and base_uri
+  // A user can (and often) belongs to multiple accounts.
+  // You can search for a specific account the user has, or
+  // give the user the choice of account to use, or use
+  // the user's default account. This example used the default account.
+  //
+  // The baseUri changes rarely so it can (and should) be cached.
+  //
+  // req.user holds the result of DocuSign OAuth::userInfo and tokens.
+  getDefaultAccountInfo(req.user.accounts)
+  apiClient.setBasePath(baseUri); // baseUri is specific to the account
+  docusign.Configuration.default.setDefaultApiClient(apiClient);
+  // Execute an example.
+  //******************************************************************
+  //*** Common API Examples
+  //*** Un-comment a sample, substitute data if needed, and run!
+  //******************************************************************
+
+  // Send an envelope via email
+  // createEnvelope(accountId)  // No semicolon here! (returns a promise)
+
+  // Embedded signing example (create Recipient View)
+  embeddedSigning(accountId) // No semicolon here! (returns a promise)
+
+  // create a new envelope from template
+  // res.send( createEnvelopeFromTemplate(accountId) );
+
+  // Embedded sending example (create Sender View)
+  // res.send( embeddedSending(accountId) );
+
+  // Embedded DS Console view (create Console view)
+  // res.send( createConsoleView(accountId) );
+
+  // get multiple envelope statuses (polling)
+  // res.send( getMultipleEnvelopeStatuses(accountId) );
+
+  // get multiple envelope statuses (polling)
+  // res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
+
+  // list envelope recipients (polling)
+  // res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
+
+  // download all envelope documents
+  // res.send( downloadEnvelopeDocuments(accountId, "[ENVELOPE_ID]") );
+
+  .then ((result) => {
+    let prefix = '<h2>Results:</h2><p>'
+      , suffix = '</p><h2><a href="/">Continue</a></h2';
+    if (result.redirect) {
+      res.redirect(result.redirect)
+    } else {
+      res.send( `${prefix} ${result.msg} ${suffix}` );
     }
+    next();
+  })
+}
 
-    // getting the API client ready
-    var apiClient = new docusign.ApiClient();
-    // currently pointing to demo (sandbox) environment
-    var RestApiUrl = 'https://demo.docusign.net/restapi';
-    apiClient.setBasePath(RestApiUrl);
-    console.log("Got a fresh access_token: " + user.accessToken);
-    apiClient.addDefaultHeader('Authorization', 'Bearer ' + user.accessToken);
+/**
+ * Set the variables accountId and baseUri from the default
+ * account information.
+ * @param {array} accounts Array of account information returned by
+ *        OAuth::userInfo
+ */
+function getDefaultAccountInfo(accounts){
+  let defaultAccount = accounts.find ((item) => item.is_default);
+  console.log (`Default account "${defaultAccount.account_name}" (${defaultAccount.account_id})`);
+  accountId = defaultAccount.account_id;
+  baseUri =  `${defaultAccount.base_uri}${baseUriSuffix}`
+}
 
-    // creating an instance of the authentication API
-    var authApi = new docusign.AuthenticationApi(apiClient);
-    var loginOps = {};
-    loginOps.apiPassword = 'true';
-    loginOps.includeAccountIdGuid = 'true';
-    // making login call. we could also use DocuSign OAuth userinfo call
-    authApi.login(loginOps, function (error, loginInfo, response) {
-      if (error) {
-        return res.send(error);
-      }
-      if (loginInfo) {
-        // list of user account(s)
-        // note that a given user may be a member of multiple accounts
-        var loginAccounts = loginInfo.loginAccounts;
-        var loginAccount = loginAccounts[0];
-        var baseUri = loginAccount.baseUrl;
-        var accountId = loginAccount.accountId;
-        var accountDomain = baseUri.split('/v2');
+/**
+ * Return a promise version of an SDK method.
+ * @param {object} obj a DocSign SDK object. Eg obj = new docusign.EnvelopesApi()
+ * @param {string} method_name The string name of a method. Eg createEnvelope
+ */
+function make_promise(obj, method_name){
+  let promise_name = method_name + '_promise';
+  if (!(promise_name in obj)) {
+    obj[promise_name] = promisify(obj[method_name]).bind(obj)
+  }
+  return obj[promise_name]
+}
 
-        // below code required for production, no effect in demo (same domain)
-        apiClient.setBasePath(accountDomain[0]);
-        docusign.Configuration.default.setDefaultApiClient(apiClient);
-        console.log("done retrieving account info for user.");
-
-        //******************************************************************
-        //*** Common API Examples
-        //*** Un-comment a sample, substitute data if needed, and run!
-        //******************************************************************
-
-        // Embedded signing example (create Recipient View)
-        // return res.send( embeddedSigning(accountId) );
-
-        // create a new envelope and send the response back
-        // return res.send( createEnvelope(accountId) );
-
-        // create a new envelope from template
-        // return res.send( createEnvelopeFromTemplate(accountId) );
-
-        // Embedded sending example (create Sender View)
-        // return res.send( embeddedSending(accountId) );
-
-        // Embedded DS Console view (create Console view)
-        // return res.send( createConsoleView(accountId) );
-
-        // get multiple envelope statuses (polling)
-        // return res.send( getMultipleEnvelopeStatuses(accountId) );
-
-        // get multiple envelope statuses (polling)
-        // return res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
-
-        // list envelope recipients (polling)
-        // return res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
-
-        // download all envelope documents
-        // return res.send( downloadEnvelopeDocuments(accountId, "[ENVELOPE_ID]") );
-      }
-    });
-  })(req, res);
-});
 
 /////////////////////////////////////////////////////////////////////////////////
-function createEnvelope(accountId) {
 
-  // create a byte array that will hold our document bytes
-  var fileBytes = null;
+/**
+ * Send an envelope (signing request) to one signer via email.
+ * The file "test.pdf" will be used, with a Sign Here field
+ * absolutely positioned on the page.
+ * @param {string} accountId The accountId to be used.
+ */
+function createEnvelope(accountId) {
+  // Create a byte array that will hold our document bytes
+  let fileBytes;
   try {
-    var fs = require('fs');
-    var path = require('path');
-    // read file from a local directory
-    fileBytes = fs.readFileSync(path.resolve(__dirname, "test.pdf"));
-    // fileBytes = fs.readFileSync(path.resolve(__dirname, "[PATH/TO/DOCUMENT]"));
+    // read document file
+    fileBytes = fs.readFileSync(path.resolve(__dirname, testDocumentPath));
   } catch (ex) {
     // handle error
-    console.log('Exception: ' + ex);
+    console.log('Exception while reading file: ' + ex);
   }
 
-  // create an envelope that will store the document(s), field(s), and recipient(s)
-  var envDef = new docusign.EnvelopeDefinition();
+  // Create an envelope that will store the document(s), field(s), and recipient(s)
+  let envDef = new docusign.EnvelopeDefinition();
   envDef.emailSubject = 'Please sign this document sent from Node SDK';
 
-  // add a document to the envelope
-  var doc = new docusign.Document();
-  var base64Doc = new Buffer(fileBytes).toString('base64');
+  // Add a document to the envelope.
+  // This code uses a generic constructor:
+  let doc = new docusign.Document()
+    , base64Doc = Buffer.from(fileBytes).toString('base64');
   doc.documentBase64 = base64Doc;
   doc.name = 'TestFile.pdf'; // can be different from actual file name
   doc.extension = 'pdf';
   doc.documentId = '1';
+  // Add to the envelope. Envelopes can have multiple docs, so an array is used
+  envDef.documents = [doc];
 
-  var docs = [];
-  docs.push(doc);
-  envDef.documents = docs;
+  // Add a recipient to sign the document, identified by name and email
+  // Objects for the SDK can be constructed from an object:
+  let signer = docusign.Signer.constructFromObject(
+    {email: signerEmail, name: signerName, recipientId: '1', routingOrder: '1'});
 
-  // add a recipient to sign the document, identified by name and email we used above
-  var signer = new docusign.Signer();
-  signer.email = '{USER_EMAIL}';
-  signer.name = '{USER_NAME}';
-  signer.recipientId = '1';
+  // The test.pdf document includes an "anchor string" of "/sn1/" in
+  // white text in the document. So we create a Sign Here
+  // field in the document anchored at the string's location.
+  // The offset is used to position the field correctly in the
+  // document.
+  let signHere = docusign.SignHere.constructFromObject({
+    anchorString: '/sn1/',
+    anchorYOffset: '10', anchorUnits: 'pixels',
+    anchorXOffset: '20'})
 
-  // create a signHere tab 100 pixels down and 150 right from the top left
-  // corner of first page of document
-  var signHere = new docusign.SignHere();
-  signHere.documentId = '1';
-  signHere.pageNumber = '1';
-  signHere.recipientId = '1';
-  signHere.xPosition = '100';
-  signHere.yPosition = '150';
-
-  // can have multiple tabs, so need to add to envelope as a single element list
-  var signHereTabs = [];
-  signHereTabs.push(signHere);
-  var tabs = new docusign.Tabs();
-  tabs.signHereTabs = signHereTabs;
+  // A signer can have multiple tabs, so an array is used
+  let signHereTabs = [signHere]
+    , tabs = docusign.Tabs.constructFromObject({
+              signHereTabs: signHereTabs});
   signer.tabs = tabs;
 
-  // add recipients (in this case a single signer) to the envelope
+  // Add recipients (in this case a single signer) to the envelope
   envDef.recipients = new docusign.Recipients();
-  envDef.recipients.signers = [];
-  envDef.recipients.signers.push(signer);
+  envDef.recipients.signers = [signer];
 
-  // send the envelope by setting |status| to "sent". To save as a draft set to "created"
+  // Send the envelope by setting |status| to "sent". To save as a draft set to "created"
   envDef.status = 'sent';
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
 
   // call the createEnvelope() API to create and send the envelope
-  envelopesApi.createEnvelope(accountId, {'envelopeDefinition': envDef}, function (err, envelopeSummary, response) {
-    if (err) {
-      return next(err);
-    }
-    console.log('EnvelopeSummary: ' + JSON.stringify(envelopeSummary));
-    return JSON.stringify(envelopeSummary);
-  });
+  // The createEnvelope() API is async and uses a callback
+  // Promises are more convenient, so we promisfy it.
+  let createEnvelope_promise = make_promise(envelopesApi, 'createEnvelope');
+  return (
+    createEnvelope_promise(accountId, {'envelopeDefinition': envDef})
+    .then ((result) => {
+      let msg = `Created the envelope! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return {msg: msg};
+    })
+    .catch ((err) => {
+      // If the error is from DocuSign, the actual error body is available in err.response.body
+      let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+        , msg = `Exception while creating the envelope! Result: ${err}`;
+      if (errMsg) {
+        msg += `. API error message: ${errMsg}`;
+      }
+      console.log(msg);
+      return {msg: msg};
+    })
+  )
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 function createEnvelopeFromTemplate (accountId) {
-    // create a new envelope object that we will manage the signature request through
-    var envDef = new docusign.EnvelopeDefinition();
-    envDef.emailSubject = 'Please sign this document sent from Node SDK';
-    envDef.templateId = '{TEMPLATE_ID}';
+  // create a new envelope object that we will manage the signature request through
+  var envDef = new docusign.EnvelopeDefinition();
+  envDef.emailSubject = 'Please sign this document sent from Node SDK';
+  envDef.templateId = '{TEMPLATE_ID}';
 
-    // create a template role with a valid templateId and roleName and assign signer info
-    var tRole = new docusign.TemplateRole();
-    tRole.roleName = '{ROLE}';
-    tRole.name = '{USER_NAME}';
-    tRole.email = '{USER_EMAIL}';
+  // create a template role with a valid templateId and roleName and assign signer info
+  var tRole = new docusign.TemplateRole();
+  tRole.roleName = '{ROLE}';
+  tRole.name = '{USER_NAME}';
+  tRole.email = '{USER_EMAIL}';
 
-    // create a list of template roles and add our newly created role
-    var templateRolesList = [];
-    templateRolesList.push(tRole);
+  // create a list of template roles and add our newly created role
+  var templateRolesList = [];
+  templateRolesList.push(tRole);
 
-    // assign template role(s) to the envelope
-    envDef.templateRoles = templateRolesList;
+  // assign template role(s) to the envelope
+  envDef.templateRoles = templateRolesList;
 
-    // send the envelope by setting |status| to 'sent'. To save as a draft set to 'created'
-    envDef.status = 'sent';
+  // send the envelope by setting |status| to 'sent'. To save as a draft set to 'created'
+  envDef.status = 'sent';
 
-    // use the |accountId| we retrieved through the Login API to create the Envelope
-    var accountId = accountId;
+  // use the |accountId| we retrieved through the Login API to create the Envelope
+  var accountId = accountId;
 
-    // instantiate a new EnvelopesApi object
-    var envelopesApi = new docusign.EnvelopesApi();
+  // instantiate a new EnvelopesApi object
+  var envelopesApi = new docusign.EnvelopesApi();
 
-    // call the createEnvelope() API
-    envelopesApi.createEnvelope(accountId, {'envelopeDefinition': envDef}, function (err, envelopeSummary, response) {
-      if (err) {
-        return next(err);
-      }
-      console.log('EnvelopeSummary: ' + JSON.stringify(envelopeSummary));
-      return JSON.stringify(envelopeSummary);
-    });
-  }
+  // The createEnvelope() API is async and uses a callback
+  // Promises are more convenient, so we promisfy it.
+  let prom = make_promise(envelopesApi, 'createEnvelope');
+  return (
+    prom(accountId, {'envelopeDefinition': envDef})
+    .then ((result) => {
+      let msg = `Created the envelope! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return msg;
+    })
+    .catch ((err) => {
+      let msg = `Exception while creating the envelope! Result: ${err}}`
+      console.log(msg);
+      return msg;
+    })
+  )
+}
 
 /////////////////////////////////////////////////////////////////////////////////
+
+
+
 function embeddedSigning(accountId) {
 
-  // API workflow contains two API requests: 
+  // API workflow contains two API requests:
   // 1) create envelope with an embedded recipient
   // 2) create the recipient view (signing URL)
 
@@ -352,7 +446,7 @@ function createRecipientView(accountId, envelopeId) {
 /////////////////////////////////////////////////////////////////////////////////
 function embeddedSending(accountId) {
 
-  // API workflow contains two API requests: 
+  // API workflow contains two API requests:
   // 1) create a draft envelope
   // 2) create the sender view (sending URL)
 
@@ -488,7 +582,7 @@ function getMultipleEnvelopeStatuses(accountId) {
   // the list status changes call requires at least a from_date OR
   // a set of envelopeIds. here we filter using a from_date
   var options = {};
-  
+
   // set from date to filter envelopes (ex: Jan 15, 2018)
   options.fromDate = '2018/15/01';
 
@@ -498,7 +592,7 @@ function getMultipleEnvelopeStatuses(accountId) {
       console.log('Error: ' + error);
       return;
     }
-  
+
     if (envelopes) {
       console.log('EnvelopesInformation: ' + JSON.stringify(envelopes));
     }
@@ -510,14 +604,14 @@ function getEnvelopeStatus(accountId, envelopeId) {
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
-  
+
   // call the getEnvelope() API
   envelopesApi.getEnvelope(accountId, envelopeId, null, function (error, env, response) {
     if (error) {
       console.log('Error: ' + error);
       return;
     }
-  
+
     if (env) {
       console.log('Envelope: ' + JSON.stringify(env));
     }
@@ -529,7 +623,7 @@ function listEnvelopeRecipients(accountId, envelopeId) {
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
-  
+
   // call the listRecipients() API
   envelopesApi.listRecipients(accountId, envelopeId, null, function (error, recips, response) {
     if (error) {
@@ -545,13 +639,13 @@ function listEnvelopeRecipients(accountId, envelopeId) {
 /////////////////////////////////////////////////////////////////////////////////
 function downloadEnvelopeDocuments(accountId, envelopeId) {
 
-  // API workflow contains two API requests: 
+  // API workflow contains two API requests:
   // 1) list envelope documents API
   // 2) get document API (for each doc)
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
-  
+
   // call the listDocuments() API
   envelopesApi.listDocuments(accountId, envelopeId, null, function (error, docsList, response) {
     if (error) {
@@ -560,10 +654,10 @@ function downloadEnvelopeDocuments(accountId, envelopeId) {
     }
     if (docsList) {
       console.log('Envelope Documents: ' + JSON.stringify(docsList));
-      
+
       // instantiate a new EnvelopesApi object
       var envelopesApi = new docusign.EnvelopesApi();
-      
+
       // **********************************************************
       // Loop through the envelope documents and download each one.
       // **********************************************************
@@ -595,13 +689,3 @@ function downloadEnvelopeDocuments(accountId, envelopeId) {
     }
   });
 }
-
-/////////////////////////////////////////////////////////////////////////////////
-app.listen(port, host, function (err) {
-  if (err) {
-    throw err;
-  }
-
-  console.log('Server running on http://' + host + ':' + port + '. Open following link to begin the authorization process: \n');
-  console.log('http://' + host + ':' + port + '/auth');
-});
