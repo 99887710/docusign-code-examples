@@ -122,13 +122,13 @@ function dsLoginCB2 (req, res, next) {
   // createEnvelope(accountId)  // No semicolon here! (returns a promise)
 
   // Embedded signing example (create Recipient View)
-  embeddedSigning(accountId) // No semicolon here! (returns a promise)
+  //embeddedSigning(accountId) // No semicolon here! (returns a promise)
 
   // create a new envelope from template
   // res.send( createEnvelopeFromTemplate(accountId) );
 
   // Embedded sending example (create Sender View)
-  // res.send( embeddedSending(accountId) );
+  embeddedSending(accountId)  // No semicolon here! (returns a promise)
 
   // Embedded DS Console view (create Console view)
   // res.send( createConsoleView(accountId) );
@@ -189,7 +189,7 @@ function make_promise(obj, method_name){
 /**
  * Send an envelope (signing request) to one signer via email.
  * The file "test.pdf" will be used, with a Sign Here field
- * absolutely positioned on the page.
+ * postioned via anchor text.
  * @param {string} accountId The accountId to be used.
  */
 function createEnvelope(accountId) {
@@ -327,7 +327,7 @@ function createEnvelopeFromTemplate (accountId) {
  * 1. Send an envelope (signing request) to one signer marked for
  * embedded signing (set the clientUserId parameter).
  * The file "test.pdf" will be used, with a Sign Here field
- * absolutely positioned on the page.
+ * postioned via anchor text.
  * <br>
  * 2. Call getRecipientView and then redirect to the url
  * to initiate an embedded signing ceremony.
@@ -454,7 +454,7 @@ function createRecipientView(accountId, envelopeId, clientUserId) {
   // call the CreateRecipientView API
   let createRecipientView_promise = make_promise(envelopesApi, 'createRecipientView');
   return (
-    envelopesApi.createRecipientView_promise(accountId, envelopeId,
+    createRecipientView_promise(accountId, envelopeId,
       {recipientViewRequest: viewRequest})
     .then ((result) => {
       let msg = `\nCreated the recipientView! Result: ${JSON.stringify(result)}`
@@ -465,46 +465,46 @@ function createRecipientView(accountId, envelopeId, clientUserId) {
 }
 
 /////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * 1. Create a draft envelope (signing request) for one signer.
+ * The file "test.pdf" will be used, with a Sign Here field
+ * absolutely positioned
+ * <br>
+ * 2. Call getSenderView and then redirect to the url
+ * to initiate an embedded sending ceremony.
+ * @param {string} accountId The accountId to be used.
+ */
 function embeddedSending(accountId) {
-
-  // API workflow contains two API requests:
-  // 1) create a draft envelope
-  // 2) create the sender view (sending URL)
-
-  // create a byte array that will hold our document bytes
-  var fileBytes = null;
+  // Create a byte array that will hold our document bytes
+  let fileBytes;
   try {
-    var fs = require('fs');
-    var path = require('path');
-    // read file from a local directory
-    fileBytes = fs.readFileSync(path.resolve(__dirname, "test.pdf"));
-    // fileBytes = fs.readFileSync(path.resolve(__dirname, "[PATH/TO/DOCUMENT]"));
+    // read document file
+    fileBytes = fs.readFileSync(path.resolve(__dirname, testDocumentPath));
   } catch (ex) {
     // handle error
-    console.log('Exception: ' + ex);
+    console.log('Exception while reading file: ' + ex);
   }
 
-  // create an envelope that will store the document(s), field(s), and recipient(s)
-  var envDef = new docusign.EnvelopeDefinition();
+  // Create an envelope that will store the document(s), field(s), and recipient(s)
+  let envDef = new docusign.EnvelopeDefinition();
   envDef.emailSubject = 'Please sign this document sent from Node SDK';
 
-  // add a document to the envelope
-  var doc = new docusign.Document();
-  var base64Doc = new Buffer(fileBytes).toString('base64');
+  // Add a document to the envelope.
+  // This code uses a generic constructor:
+  let doc = new docusign.Document()
+    , base64Doc = Buffer.from(fileBytes).toString('base64');
   doc.documentBase64 = base64Doc;
   doc.name = 'TestFile.pdf'; // can be different from actual file name
   doc.extension = 'pdf';
   doc.documentId = '1';
+  // Add to the envelope. Envelopes can have multiple docs, so an array is used
+  envDef.documents = [doc];
 
-  var docs = [];
-  docs.push(doc);
-  envDef.documents = docs;
-
-  // add a recipient to sign the document, identified by name and email we used above
-  var signer = new docusign.Signer();
-  signer.email = '{USER_EMAIL}';
-  signer.name = '{USER_NAME}';
-  signer.recipientId = '1';
+  // Add a recipient to sign the document, identified by name and email
+  // Objects for the SDK can be constructed from an object:
+  let signer = docusign.Signer.constructFromObject(
+    {email: signerEmail, name: signerName, recipientId: '1', routingOrder: '1'});
 
   // create a signHere tab 100 pixels down and 150 right from the top left
   // corner of first page of document
@@ -515,40 +515,63 @@ function embeddedSending(accountId) {
   signHere.xPosition = '100';
   signHere.yPosition = '150';
 
-  // can have multiple tabs, so need to add to envelope as a single element list
-  var signHereTabs = [];
-  signHereTabs.push(signHere);
-  var tabs = new docusign.Tabs();
-  tabs.signHereTabs = signHereTabs;
+  // A signer can have multiple tabs, so an array is used
+  let signHereTabs = [signHere]
+    , tabs = docusign.Tabs.constructFromObject({
+              signHereTabs: signHereTabs});
   signer.tabs = tabs;
 
-  // add recipients (in this case a single signer) to the envelope
+  // Add recipients (in this case a single signer) to the envelope
   envDef.recipients = new docusign.Recipients();
-  envDef.recipients.signers = [];
-  envDef.recipients.signers.push(signer);
+  envDef.recipients.signers = [signer];
 
-  //*** must set to "created" status so we can open the tag and send view of the envelope
+  // Create a draft envelope by setting |status| to "created"
   envDef.status = 'created';
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
 
   // call the createEnvelope() API to create and send the envelope
-  envelopesApi.createEnvelope(accountId, {'envelopeDefinition': envDef}, function (err, envelopeSummary, response) {
-    if (err) {
-      return next(err);
-    }
-    console.log('EnvelopeSummary: ' + JSON.stringify(envelopeSummary));
-
-    // ***
-    // Once the envelope call createRecipientView() to generate the signing URL!
-    // ***
-    return createSenderView(accountId, envelopeSummary.envelopeId);
-  });
+  // The createEnvelope() API is async and uses a callback
+  // Promises are more convenient, so we promisfy it.
+  let createEnvelope_promise = make_promise(envelopesApi, 'createEnvelope');
+  return (
+    createEnvelope_promise(accountId, {'envelopeDefinition': envDef})
+    .then ((result) => {
+      let msg = `\nCreated the draft envelope! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return result.envelopeId;
+    })
+    .then ((envelopeId) =>
+      // Step 2 call createSenderView() to generate the signing URL!
+      createSenderView(accountId, envelopeId)
+    )
+    .catch ((err) => {
+      // If the error is from DocuSign, the actual error body is available in err.response.body
+      let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+        , msg = `\nException! Result: ${err}`;
+      if (errMsg) {
+        msg += `. API error message: ${errMsg}`;
+      }
+      console.log(msg);
+      return {msg: msg};
+    })
+  )
 }
 
 /////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Step 2. Call getSenderView and then redirect to the url
+ * to initiate an embedded sending for the envelope.
+ * The sender's view can be started either in the
+ * sender (recipients and documents) screen or the tagging
+ * screen of the sender web tool.
+ * @param {string} accountId The accountId to be used.
+ * @param {string} envelopeId The envelope's id.
+ */
 function createSenderView(accountId, envelopeId) {
+  let startWithRecipientsScreen = true;
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
@@ -556,20 +579,23 @@ function createSenderView(accountId, envelopeId) {
   // set the url where you want the recipient to go once they are done signing
   // should typically be a callback route somewhere in your app
   var viewRequest = new docusign.ReturnUrlRequest();
-  viewRequest.returnUrl = 'https://www.docusign.com/';
+  viewRequest.returnUrl = hostUrl;
 
   // call the CreateRecipientView API
-  envelopesApi.createSenderView(accountId, envelopeId, {'returnUrlRequest': viewRequest}, function (error, senderView, response) {
-    if (error) {
-      console.log('Error: ' + error);
-      return;
-    }
-
-    if (senderView) {
-      console.log('ViewUrl: ' + JSON.stringify(senderView));
-    }
-    return JSON.stringify(senderView);
-  });
+  let createSenderView_promise = make_promise(envelopesApi, 'createSenderView');
+  return (
+    createSenderView_promise(accountId, envelopeId, {returnUrlRequest: viewRequest})
+    .then ((result) => {
+      let msg = `\nCreated the senderView! Result: ${JSON.stringify(result)}
+Start with the recipient's screen: ${startWithRecipientsScreen}`
+      console.log(msg);
+      let url = result.url;
+      if (startWithRecipientsScreen) {
+        url = url.replace('send=1', 'send=0');
+      }
+      return {redirect: url};
+    })
+  )
 }
 
 /////////////////////////////////////////////////////////////////////////////////
