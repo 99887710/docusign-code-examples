@@ -146,7 +146,7 @@ function dsLoginCB2 (req, res, next) {
   // res.send( downloadEnvelopeDocuments(accountId, "[ENVELOPE_ID]") );
 
   .then ((result) => {
-    let prefix = '<h2>Results:</h2><p>'
+    let prefix = "<h2>Results:</h2><p>"
       , suffix = '</p><h2><a href="/">Continue</a></h2';
     if (result.redirect) {
       res.redirect(result.redirect)
@@ -256,14 +256,14 @@ function createEnvelope(accountId) {
   return (
     createEnvelope_promise(accountId, {'envelopeDefinition': envDef})
     .then ((result) => {
-      let msg = `Created the envelope! Result: ${JSON.stringify(result)}`
+      let msg = `\nCreated the envelope! Result: ${JSON.stringify(result)}`
       console.log(msg);
       return {msg: msg};
     })
     .catch ((err) => {
       // If the error is from DocuSign, the actual error body is available in err.response.body
       let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
-        , msg = `Exception while creating the envelope! Result: ${err}`;
+        , msg = `\nException while creating the envelope! Result: ${err}`;
       if (errMsg) {
         msg += `. API error message: ${errMsg}`;
       }
@@ -323,124 +323,145 @@ function createEnvelopeFromTemplate (accountId) {
 /////////////////////////////////////////////////////////////////////////////////
 
 
-
+/**
+ * 1. Send an envelope (signing request) to one signer marked for
+ * embedded signing (set the clientUserId parameter).
+ * The file "test.pdf" will be used, with a Sign Here field
+ * absolutely positioned on the page.
+ * <br>
+ * 2. Call getRecipientView and then redirect to the url
+ * to initiate an embedded signing ceremony.
+ * @param {string} accountId The accountId to be used.
+ */
 function embeddedSigning(accountId) {
-
-  // API workflow contains two API requests:
-  // 1) create envelope with an embedded recipient
-  // 2) create the recipient view (signing URL)
-
-  // create a byte array that will hold our document bytes
-  var fileBytes = null;
+  // Step 1, create the envelope is the same as for the createEnvelope
+  // method except that the clientUserId parameter is set.
+  // Create a byte array that will hold our document bytes
+  let fileBytes;
   try {
-    var fs = require('fs');
-    var path = require('path');
-    // read file from a local directory
-    fileBytes = fs.readFileSync(path.resolve(__dirname, "test.pdf"));
-    // fileBytes = fs.readFileSync(path.resolve(__dirname, "[PATH/TO/DOCUMENT]"));
+    // read document file
+    fileBytes = fs.readFileSync(path.resolve(__dirname, testDocumentPath));
   } catch (ex) {
     // handle error
-    console.log('Exception: ' + ex);
+    console.log('Exception while reading file: ' + ex);
   }
 
-  // create an envelope that will store the document(s), field(s), and recipient(s)
-  var envDef = new docusign.EnvelopeDefinition();
+  // Create an envelope that will store the document(s), field(s), and recipient(s)
+  let envDef = new docusign.EnvelopeDefinition();
   envDef.emailSubject = 'Please sign this document sent from Node SDK';
 
-  // add a document to the envelope
-  var doc = new docusign.Document();
-  var base64Doc = new Buffer(fileBytes).toString('base64');
+  // Add a document to the envelope.
+  // This code uses a generic constructor:
+  let doc = new docusign.Document()
+    , base64Doc = Buffer.from(fileBytes).toString('base64');
   doc.documentBase64 = base64Doc;
   doc.name = 'TestFile.pdf'; // can be different from actual file name
   doc.extension = 'pdf';
   doc.documentId = '1';
+  // Add to the envelope. Envelopes can have multiple docs, so an array is used
+  envDef.documents = [doc];
 
-  var docs = [];
-  docs.push(doc);
-  envDef.documents = docs;
-
-  // add a recipient to sign the document, identified by name and email we used above
-  var signer = new docusign.Signer();
-  signer.email = '{USER_EMAIL}';
-  signer.name = '{USER_NAME}';
-  signer.recipientId = '1';
+  // Add a recipient to sign the document, identified by name and email
+  // Objects for the SDK can be constructed from an object:
+  let signer = docusign.Signer.constructFromObject(
+    {email: signerEmail, name: signerName, recipientId: '1', routingOrder: '1'});
 
   //*** important: must set the clientUserId property to embed the recipient!
-  // otherwise DocuSign platform will treat recipient as remote and your
-  // integration will not be able to generate a signing token for the recipient
-  signer.clientUserId = '1001';
+  // Otherwise the DocuSign platform will treat recipient as remote (an email
+  // will be sent) and the embedded signing will not work.
+  let clientUserId = '1001'
+  signer.clientUserId = clientUserId;
 
-  // create a signHere tab 100 pixels down and 150 right from the top left
-  // corner of first page of document
-  var signHere = new docusign.SignHere();
-  signHere.documentId = '1';
-  signHere.pageNumber = '1';
-  signHere.recipientId = '1';
-  signHere.xPosition = '100';
-  signHere.yPosition = '150';
+  // The test.pdf document includes an "anchor string" of "/sn1/" in
+  // white text in the document. So we create a Sign Here
+  // field in the document anchored at the string's location.
+  // The offset is used to position the field correctly in the
+  // document.
+  let signHere = docusign.SignHere.constructFromObject({
+    anchorString: '/sn1/',
+    anchorYOffset: '10', anchorUnits: 'pixels',
+    anchorXOffset: '20'})
 
-  // can have multiple tabs, so need to add to envelope as a single element list
-  var signHereTabs = [];
-  signHereTabs.push(signHere);
-  var tabs = new docusign.Tabs();
-  tabs.signHereTabs = signHereTabs;
+  // A signer can have multiple tabs, so an array is used
+  let signHereTabs = [signHere]
+    , tabs = docusign.Tabs.constructFromObject({
+              signHereTabs: signHereTabs});
   signer.tabs = tabs;
 
-  // add recipients (in this case a single signer) to the envelope
+  // Add recipients (in this case a single signer) to the envelope
   envDef.recipients = new docusign.Recipients();
-  envDef.recipients.signers = [];
-  envDef.recipients.signers.push(signer);
+  envDef.recipients.signers = [signer];
 
-  // send the envelope by setting |status| to "sent". To save as a draft set to "created"
+  // Send the envelope by setting |status| to "sent". To save as a draft set to "created"
   envDef.status = 'sent';
 
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
 
   // call the createEnvelope() API to create and send the envelope
-  envelopesApi.createEnvelope(accountId, {'envelopeDefinition': envDef}, function (err, envelopeSummary, response) {
-    if (err) {
-      return next(err);
-    }
-    console.log('EnvelopeSummary: ' + JSON.stringify(envelopeSummary));
-
-    // ***
-    // Once the envelope call createRecipientView() to generate the signing URL!
-    // ***
-    return createRecipientView(accountId, envelopeSummary.envelopeId);
-  });
+  // The createEnvelope() API is async and uses a callback
+  // Promises are more convenient, so we promisfy it.
+  let createEnvelope_promise = make_promise(envelopesApi, 'createEnvelope');
+  return (
+    createEnvelope_promise(accountId, {'envelopeDefinition': envDef})
+    .then ((result) => {
+      let msg = `\nCreated the envelope! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return result.envelopeId;
+    })
+    .then ((envelopeId) =>
+      // Step 2 call createRecipientView() to generate the signing URL!
+      createRecipientView(accountId, envelopeId, clientUserId)
+    )
+    .catch ((err) => {
+      // If the error is from DocuSign, the actual error body is available in err.response.body
+      let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+        , msg = `\nException! Result: ${err}`;
+      if (errMsg) {
+        msg += `. API error message: ${errMsg}`;
+      }
+      console.log(msg);
+      return {msg: msg};
+    })
+  )
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-function createRecipientView(accountId, envelopeId) {
-
+/**
+ * Step 2. Call getRecipientView and then redirect to the url
+ * to initiate an embedded signing ceremony.
+ * @param {string} accountId The accountId to be used.
+ * @param {string} envelopeId The envelope's id.
+ * @param {string} clientUserId The value used when the signer was added to the envelope.
+ */
+function createRecipientView(accountId, envelopeId, clientUserId) {
   // instantiate a new EnvelopesApi object
   var envelopesApi = new docusign.EnvelopesApi();
 
   // set the url where you want the recipient to go once they are done signing
   // should typically be a callback route somewhere in your app
   var viewRequest = new docusign.RecipientViewRequest();
-  viewRequest.returnUrl = 'https://www.docusign.com/';
-  viewRequest.authenticationMethod = 'email';
-
-  // recipient information must match embedded recipient info we provided in step #2
-  viewRequest.email = '{USER_EMAIL}';
-  viewRequest.userName = '{USER_NAME}';
-  viewRequest.recipientId = '1';
-  viewRequest.clientUserId = '1001';
+  viewRequest.returnUrl = hostUrl;
+  // How has your app authenticated the user? In addition to your app's
+  // authentication, you can include authenticate steps from DocuSign.
+  // Eg, SMS authentication
+  viewRequest.authenticationMethod = 'none';
+  // recipient information must match embedded recipient info
+  // we used to create the envelope.
+  viewRequest.email = signerEmail;
+  viewRequest.userName = signerName;
+  viewRequest.clientUserId = clientUserId;
 
   // call the CreateRecipientView API
-  envelopesApi.createRecipientView(accountId, envelopeId, {'recipientViewRequest': viewRequest}, function (error, recipientView, response) {
-    if (error) {
-      console.log('Error: ' + error);
-      return;
-    }
-
-    if (recipientView) {
-      console.log('ViewUrl: ' + JSON.stringify(recipientView));
-    }
-    return JSON.stringify(recipientView);
-  });
+  let createRecipientView_promise = make_promise(envelopesApi, 'createRecipientView');
+  return (
+    envelopesApi.createRecipientView_promise(accountId, envelopeId,
+      {recipientViewRequest: viewRequest})
+    .then ((result) => {
+      let msg = `\nCreated the recipientView! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return {redirect: result.url};
+    })
+  )
 }
 
 /////////////////////////////////////////////////////////////////////////////////
