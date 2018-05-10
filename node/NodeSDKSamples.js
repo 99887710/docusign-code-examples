@@ -23,6 +23,8 @@ const app = express()
 let apiClient // The DocuSign API object
   , accountId // The DocuSign account that will be used
   , baseUri // the DocuSign platform base uri for the account.
+  , sentEnvelopeId = false // envelopeId of the last envelope sent
+  , eg // The example that's been requested
   ;
 
 app.use(session({
@@ -66,10 +68,20 @@ passport.serializeUser(function(user, done) {done(null, user)});
 passport.deserializeUser(function(obj, done) {done(null, obj)});
 
 app.get('/', function (req, res) {
-  res.send('<h2>Home page</h2><h2><a href="/auth">Authenticate and run the example</a></h2');
-});
+  res.send(`<h2>Home page</h2>
+<h3><a href="/auth?eg=1">Authenticate then Send Envelope via email</a></h3>
+<h3><a href="/auth?eg=2">Authenticate then Embeddded Signing Ceremony</a></h3>
+<h3><a href="/auth?eg=3">Authenticate then Send envelope using a template</a></h3>
+<h3><a href="/auth?eg=4">Authenticate then Embedded Sending</a></h3>
+<h3><a href="/auth?eg=5">Authenticate then Embedded DocuSign console</a></h3>
+<h3><a href="/auth?eg=6">Authenticate then List multiple envelopes' status</a></h3>
+<h3><a href="/auth?eg=7">Authenticate then Get an envelope's status</a></h3>
+<h3><a href="/auth?eg=8">Authenticate then List an envelope's recipients</a></h3>
+<h3><a href="/auth?eg=9">Authenticate then Download an envelope's document(s)</a></h3>
+`)});
 
 app.get('/auth', function (req, res, next) {
+  req.session.eg = req.query.eg || 1; // Save the requested example number
   passport.authenticate('docusign')(req, res, next);
 });
 
@@ -113,38 +125,41 @@ function dsLoginCB2 (req, res, next) {
   apiClient.setBasePath(baseUri); // baseUri is specific to the account
   docusign.Configuration.default.setDefaultApiClient(apiClient);
   // Execute an example.
-  //******************************************************************
-  //*** Common API Examples
-  //*** Un-comment a sample, substitute data if needed, and run!
-  //******************************************************************
+  eg = req.session.eg; // retrieve the requested example number
 
   // Send an envelope via email
-  // createEnvelope(accountId)  // No semicolon here! (returns a promise)
+  let p1 = new Promise((resolve) => {
+    if (eg == 1) {resolve(createEnvelope(accountId))
+    } else {resolve(false)}
+  })
+
+  p1 // Kick off the promise chain
 
   // Embedded signing example (create Recipient View)
-  //embeddedSigning(accountId) // No semicolon here! (returns a promise)
+  .then ((result) => eg == 2 ? embeddedSigning(accountId) : result)
 
   // create a new envelope from template
-  // res.send( createEnvelopeFromTemplate(accountId) );
+  .then ((result) => eg == 3 ? createEnvelopeFromTemplate(accountId) : result)
 
   // Embedded sending example (create Sender View)
-  embeddedSending(accountId)  // No semicolon here! (returns a promise)
+  .then ((result) => eg == 4 ? embeddedSending(accountId) : result)
 
-  // Embedded DS Console view (create Console view)
-  // res.send( createConsoleView(accountId) );
-
-  // get multiple envelope statuses (polling)
-  // res.send( getMultipleEnvelopeStatuses(accountId) );
+  // Embedded DocuSign Console view (create Console view)
+  .then ((result) => eg == 5 ? createConsoleView(accountId) : result)
 
   // get multiple envelope statuses (polling)
-  // res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
+  .then ((result) => eg == 6 ? getMultipleEnvelopeStatuses(accountId) : result)
+
+  // get an envelope's status (polling)
+  .then ((result) => eg == 7 ? getEnvelopeStatus(accountId) : result)
 
   // list envelope recipients (polling)
-  // res.send( getEnvelopeStatus(accountId, "[ENVELOPE_ID]") );
+  .then ((result) => eg == 8 ? listEnvelopeRecipients(accountId) : result)
 
   // download all envelope documents
-  // res.send( downloadEnvelopeDocuments(accountId, "[ENVELOPE_ID]") );
+  .then ((result) => eg == 9 ? downloadEnvelopeDocuments(accountId) : result)
 
+  // handle the example's result
   .then ((result) => {
     let prefix = "<h2>Results:</h2><p>"
       , suffix = '</p><h2><a href="/">Continue</a></h2';
@@ -435,11 +450,11 @@ function embeddedSigning(accountId) {
  */
 function createRecipientView(accountId, envelopeId, clientUserId) {
   // instantiate a new EnvelopesApi object
-  var envelopesApi = new docusign.EnvelopesApi();
+  let envelopesApi = new docusign.EnvelopesApi();
 
   // set the url where you want the recipient to go once they are done signing
   // should typically be a callback route somewhere in your app
-  var viewRequest = new docusign.RecipientViewRequest();
+  let viewRequest = new docusign.RecipientViewRequest();
   viewRequest.returnUrl = hostUrl;
   // How has your app authenticated the user? In addition to your app's
   // authentication, you can include authenticate steps from DocuSign.
@@ -508,7 +523,7 @@ function embeddedSending(accountId) {
 
   // create a signHere tab 100 pixels down and 150 right from the top left
   // corner of first page of document
-  var signHere = new docusign.SignHere();
+  let signHere = new docusign.SignHere();
   signHere.documentId = '1';
   signHere.pageNumber = '1';
   signHere.recipientId = '1';
@@ -529,7 +544,7 @@ function embeddedSending(accountId) {
   envDef.status = 'created';
 
   // instantiate a new EnvelopesApi object
-  var envelopesApi = new docusign.EnvelopesApi();
+  let envelopesApi = new docusign.EnvelopesApi();
 
   // call the createEnvelope() API to create and send the envelope
   // The createEnvelope() API is async and uses a callback
@@ -574,11 +589,11 @@ function createSenderView(accountId, envelopeId) {
   let startWithRecipientsScreen = true;
 
   // instantiate a new EnvelopesApi object
-  var envelopesApi = new docusign.EnvelopesApi();
+  let envelopesApi = new docusign.EnvelopesApi();
 
   // set the url where you want the recipient to go once they are done signing
   // should typically be a callback route somewhere in your app
-  var viewRequest = new docusign.ReturnUrlRequest();
+  let viewRequest = new docusign.ReturnUrlRequest();
   viewRequest.returnUrl = hostUrl;
 
   // call the CreateRecipientView API
@@ -599,25 +614,37 @@ Start with the recipient's screen: ${startWithRecipientsScreen}`
 }
 
 /////////////////////////////////////////////////////////////////////////////////
-function createConsoleView(accountId) {
 
+/**
+ * Open the console view of NDSE for the user.
+ * @param {string} accountId The accountId to be used.
+ */
+function createConsoleView(accountId) {
   // instantiate a new EnvelopesApi and consoleViewRequest objects
-  var envelopesApi = new docusign.EnvelopesApi();
-  var viewRequest = new docusign.ConsoleViewRequest();
-  viewRequest.returnUrl = 'https://www.docusign.com/';
+  let envelopesApi = new docusign.EnvelopesApi()
+    , viewRequest = new docusign.ConsoleViewRequest();
+  viewRequest.returnUrl = hostUrl;
 
   // call the CreateConsoleView API
-  envelopesApi.createConsoleView(accountId, {'consoleViewRequest': viewRequest}, function (error, consoleView, response) {
-    if (error) {
-      console.log('Error: ' + error);
-      return;
-    }
-
-    if (consoleView) {
-      console.log('ViewUrl: ' + JSON.stringify(consoleView));
-    }
-    return JSON.stringify(consoleView);
-  });
+  let createConsoleView_promise = make_promise(envelopesApi, 'createConsoleView');
+  return (
+    createConsoleView_promise(accountId, {'consoleViewRequest': viewRequest})
+    .then ((result) => {
+      let msg = `\nCreated the ConsoleView! Result: ${JSON.stringify(result)}`
+      console.log(msg);
+      return {redirect: result.url};
+    })
+    .catch ((err) => {
+      // If the error is from DocuSign, the actual error body is available in err.response.body
+      let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+        , msg = `\nException! Result: ${err}`;
+      if (errMsg) {
+        msg += `. API error message: ${errMsg}`;
+      }
+      console.log(msg);
+      return {msg: msg};
+    })
+  )
 }
 
 /////////////////////////////////////////////////////////////////////////////////
