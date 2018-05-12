@@ -3,7 +3,7 @@ const express = require('express')
     , session = require('express-session')
     , docusign = require('docusign-esign')
     , moment = require('moment')
-    , fs = require('fs')
+    , fs = require('fs-extra')
     , path = require('path')
     , {promisify} = require('util') // http://2ality.com/2017/05/util-promisify.html
     ;
@@ -128,13 +128,9 @@ function dsLoginCB2 (req, res, next) {
   // Execute an example.
   eg = req.session.eg; // retrieve the requested example number
 
+  Promise.resolve()
   // Send an envelope via email
-  let p1 = new Promise((resolve) => {
-    if (eg == 1) {resolve(createEnvelope(accountId))
-    } else {resolve(false)}
-  })
-
-  p1 // Kick off the promise chain
+  .then ((result) => eg == 1 ? createEnvelope(accountId) : result)
   // Embedded signing example (create Recipient View)
   .then ((result) => eg == 2 ? embeddedSigning(accountId) : result)
   // create a new envelope from template
@@ -789,55 +785,125 @@ SOLUTION: First run the <b>Send Envelope via email</b> example to create an enve
 }
 
 /////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * List, then download the envelopes documents to ./downloaded_documents folder
+ * @param {string} accountId The accountId to be used.
+ * @param {string} envelopeId The envelope to be looked up.
+ */
 function downloadEnvelopeDocuments(accountId, envelopeId) {
+  if (!envelopeId){
+    let msg = `
+PROBLEM: This example software doesn't know which envelope's information should be looked up. <br>
+SOLUTION: First run the <b>Send Envelope via email</b> example to create an envelope.`
+    return {msg: msg}
+  }
 
-  // API workflow contains two API requests:
-  // 1) list envelope documents API
-  // 2) get document API (for each doc)
+  //The workflow will be multiple API requests:
+  // 1) list the envelope's documents
+  // 2) Loop to get each document
+  const docDownloadDir = "downloaded_documents"
+      , docDownloadDirPath = path.resolve(__dirname, docDownloadDir);
+  let completeMsg = `Documents downloaded to ${docDownloadDirPath}`;
 
-  // instantiate a new EnvelopesApi object
-  var envelopesApi = new docusign.EnvelopesApi();
-
-  // call the listDocuments() API
-  envelopesApi.listDocuments(accountId, envelopeId, null, function (error, docsList, response) {
-    if (error) {
-      console.log('Error: ' + error);
-      return;
-    }
-    if (docsList) {
-      console.log('Envelope Documents: ' + JSON.stringify(docsList));
-
-      // instantiate a new EnvelopesApi object
-      var envelopesApi = new docusign.EnvelopesApi();
-
-      // **********************************************************
-      // Loop through the envelope documents and download each one.
-      // **********************************************************
-      for (var i = 0; i < docsList.envelopeDocuments.length; i++) {
-        var documentId = docsList.envelopeDocuments[i].documentId;
-        // call the getDocument() API
-        envelopesApi.getDocument(accountId, envelopeId, documentId, null, function (error, document, response) {
-          if (error) {
-            console.log('Error: ' + error);
-            return;
-          }
-          if (document) {
-            try {
-              var fs = require('fs');
-              var path = require('path');
-              // download the document pdf
-              var filename = envelopeId + '_' + documentId + '.pdf';
-              var tempFile = path.resolve(__dirname, filename);
-              fs.writeFile(tempFile, new Buffer(document, 'binary'), function (err) {
-                if (err) console.log('Error: ' + err);
-              });
-              console.log('Document ' + documentId + ' from envelope ' + envelopeId + ' has been downloaded to:\n' + tempFile);
-            } catch (ex) {
-              console.log('Exception: ' + ex);
-            }
-          }
-        });
+  return ( // return a promise
+    // Create the dir
+    fs.ensureDir(docDownloadDirPath)
+    .catch (err => {;})
+    .then (() => {
+      let envelopesApi = new docusign.EnvelopesApi();
+      // call the listDocuments() API
+      let listDocuments_promise = make_promise(envelopesApi, 'listDocuments');
+      return listDocuments_promise(accountId, envelopeId, null)
+    })
+    .then ((result) => {
+      console.log(`\nList documents response received!\n${JSON.stringify(result, null, '    ')}`);
+      return result
+    })
+    .catch ((err) => {
+      // If the error is from DocuSign, the actual error body is available in err.response.body
+      let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+        , msg = `\nException! Result: ${err}`;
+      if (errMsg) {
+        msg += `. API error message: ${errMsg}`;
       }
-    }
-  });
+      console.log(msg);
+      return {msg: msg};
+    })
+    .then ((result) => {
+      // Create a promise chain for each document in the results list.
+      // Use the envelopeId in the file name.
+      // Documents of type summary and content will be of type pdf.
+      // Other types will also be pdf except for telephone authentication
+      // voice files and perhaps other file types in the future.
+      let envelopesApi = new docusign.EnvelopesApi()
+        , getDocument_promise = make_promise(envelopesApi, 'getDocument');
+
+      function getDocument(doc){
+        let docName = `${envelopeId}__${doc.name}`
+          , hasPDFsuffix = docName.substr(docName.length - 4).toUpperCase() === '.PDF'
+          ;
+        // Add .pdf if it's a content or summary doc and doesn't already end in .pdf
+        if ((doc.type === "content" || doc.type === "summary") && !hasPDFsuffix){
+          docName += ".pdf"
+        }
+        return (
+          getDocument_promise(accountId, envelopeId, doc.documentId, null)
+          .then ((docBytes) =>
+            fs.writeFile(path.resolve(docDownloadDirPath, docName), docBytes, {encoding: 'binary'}))
+          .then (() => {
+            completeMsg += `<br>Wrote document id ${doc.documentId} to ${docName}`
+          })
+          .catch ((err) => {
+            // If the error is from DocuSign, the actual error body is available in err.response.body
+            let errMsg = err.response && err.response.body && JSON.stringify(err.response.body)
+              , msg = `\nException while processing document ${doc.documentId} Result: ${err}`;
+            if (errMsg) {
+              msg += `. API error message: ${errMsg}`;
+            }
+            console.log(msg);
+            return Promise.resolve()
+          })
+        )
+      }
+
+      // Return the promise chain from last element
+      return (
+        result.envelopeDocuments.reduce(function (chain, item) {
+          // bind item to first argument of function handle, replace `null` context as necessary
+          return chain.then(getDocument.bind(null, item));
+          // start chain with promise of first item
+        }, Promise.resolve())
+        .then (() => {return {msg: completeMsg}})
+      )
+    })
+
+    //     // **********************************************************
+    //     // Loop through the envelope documents and download each one.
+    //     // **********************************************************
+    //     for (var i = 0; i < docsList.envelopeDocuments.length; i++) {
+    //       var documentId = docsList.envelopeDocuments[i].documentId;
+    //       // call the getDocument() API
+    //       envelopesApi.getDocument(accountId, envelopeId, documentId, null, function (error, document, response) {
+    //         if (error) {
+    //           console.log('Error: ' + error);
+    //           return;
+    //         }
+    //         if (document) {
+    //           try {
+    //             var fs = require('fs');
+    //             var path = require('path');
+    //             // download the document pdf
+    //             var filename = envelopeId + '_' + documentId + '.pdf';
+    //             var tempFile = path.resolve(__dirname, filename);
+    //             fs.writeFile(tempFile, new Buffer(document, 'binary'), function (err) {
+    //               if (err) console.log('Error: ' + err);
+    //             });
+    //             console.log('Document ' + documentId + ' from envelope ' + envelopeId + ' has been downloaded to:\n' + tempFile);
+    //         }
+    //       });
+    //     }
+    //   }
+    // });
+  )
 }
