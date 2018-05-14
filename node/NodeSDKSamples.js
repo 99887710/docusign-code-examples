@@ -918,7 +918,7 @@ SOLUTION: First run the <b>Send Envelope via email</b> example to create an enve
           .then ((docBytes) =>
             fs.writeFile(path.resolve(docDownloadDirPath, docName), docBytes, {encoding: 'binary'}))
           .then (() => {
-            completeMsg += `<br>Wrote document id ${doc.documentId} to ${docName}`
+            completeMsg += `<br>\nWrote document id ${doc.documentId} to ${docName}`
           })
           .catch ((err) => {
             // If the error is from DocuSign, the actual error body is available in err.response.body
