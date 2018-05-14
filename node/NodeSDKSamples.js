@@ -28,14 +28,6 @@ let apiClient // The DocuSign API object
   , eg // The example that's been requested
   ;
 
-app.use(session({
-  secret: 'secret token',
-  resave: true,
-  saveUninitialized: true
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-
 // Configure Passport
 passport.use(new docusign.OAuthClient({
     sandbox: true,
@@ -54,6 +46,8 @@ passport.use(new docusign.OAuthClient({
     user.accessToken = accessToken;
     user.refreshToken = refreshToken;
     user.expiresIn = params.expires_in;
+    // Calculate the time that the token will expire
+    user.expires = moment().add(user.expiresIn, 's');
     return done(null, user);
   }
 ));
@@ -68,26 +62,42 @@ passport.use(new docusign.OAuthClient({
 passport.serializeUser(function(user, done) {done(null, user)});
 passport.deserializeUser(function(obj, done) {done(null, obj)});
 
-app.get('/', function (req, res) {
+// Configure the webserver
+app.use(session({
+  secret: 'secret token',
+  resave: true,
+  saveUninitialized: true
+}))
+.use(passport.initialize())
+.use(passport.session())
+/* Home page */
+.get('/', function (req, res) {
   res.send(`<h2>Home page</h2>
-<h3><a href="/auth?eg=1">Authenticate then Send Envelope via email</a></h3>
-<h3><a href="/auth?eg=2">Authenticate then Embeddded Signing Ceremony</a></h3>
-<h3><a href="/auth?eg=3">Authenticate then Send envelope using a template</a></h3>
-<h3><a href="/auth?eg=4">Authenticate then Embedded Sending</a></h3>
-<h3><a href="/auth?eg=5">Authenticate then Embedded DocuSign console</a></h3>
-<h3><a href="/auth?eg=6">Authenticate then List multiple envelopes' status</a></h3>
-<h3><a href="/auth?eg=7">Authenticate then Get an envelope's status</a></h3>
-<h3><a href="/auth?eg=8">Authenticate then List an envelope's recipients</a></h3>
-<h3><a href="/auth?eg=9">Authenticate then Download an envelope's document(s)</a></h3>
-`)});
-
-app.get('/auth', function (req, res, next) {
-  req.session.eg = req.query.eg || 1; // Save the requested example number
+<h3><a href="/go?eg=1">Send Envelope via email</a></h3>
+<h3><a href="/go?eg=2">Embeddded Signing Ceremony</a></h3>
+<h3><a href="/go?eg=3">Send envelope using a template</a></h3>
+<h3><a href="/go?eg=4">Embedded Sending</a></h3>
+<h3><a href="/go?eg=5">Embedded DocuSign console</a></h3>
+<h3><a href="/go?eg=6">List multiple envelopes' status</a></h3>
+<h3><a href="/go?eg=7">Get an envelope's status</a></h3>
+<h3><a href="/go?eg=8">List an envelope's recipients</a></h3>
+<h3><a href="/go?eg=9">Download an envelope's document(s)</a></h3>
+`)})
+/* Page for starting OAuth Authorization Code Grant */
+.get('/auth', function (req, res, next) {
   passport.authenticate('docusign')(req, res, next);
-});
+})
+/* Page for handling OAuth Authorization Code Grant callback */
+.get('/auth/callback', [dsLoginCB1, dsLoginCB2])
+/* Page to receive pings from the DocuSign embedded Signing Ceremony */
+.get('/dsping', dsPingController)
+/* Middleware: ensure that we have a DocuSign token. Obtain one if not. */
+/*             checkToken will apply to all subsequent routes. */
+.use(checkToken)
+/* Page to execute an example */
+.get('/go', goPageController)
 
-app.get('/auth/callback', [dsLoginCB1, dsLoginCB2]);
-
+/* Start the web server */
 if (clientID === '{CLIENT_ID}') {
   console.log(`PROBLEM: You need to set the Client_ID (Integrator Key), and perhaps other settings as well. You can set them in the source or set environment variables.`);
 } else {
@@ -99,16 +109,50 @@ if (clientID === '{CLIENT_ID}') {
   });
 }
 
+/**
+ * Middleware: check that a token is available to be used.
+ * If not, start the authorization process
+ */
+function checkToken(req, res, next){
+  if (req.query.eg){
+    req.session.eg = req.query.eg; // Save the requested example number
+  }
+  // Do we have a token that can be used?
+  // Use a 30 minute buffer time to enable the user to fill out
+  // a request form and send it.
+  let tokenBufferMin = 30
+    , now = moment();
+  if (tokenBufferMin && req.user && req.user.accessToken &&
+       now.add(tokenBufferMin, 'm').isBefore(req.user.expires)) {
+    console.log ('\nUsing existing access token.')
+    next()
+  } else {
+    console.log ('\nGet a new access token.');
+    res.redirect('/auth');
+  }
+}
+
+/**
+ * Page controller for processing the OAuth callback
+ */
 function dsLoginCB1 (req, res, next) {
   passport.authenticate('docusign', { failureRedirect: '/auth' })(req, res, next)
 }
-
 function dsLoginCB2 (req, res, next) {
+  console.log(`Received access_token: ${req.user.accessToken.substring(0,15)}...`);
+  console.log(`Expires at ${req.user.expires.format("dddd, MMMM Do YYYY, h:mm:ss a")}`);
+  // If an example was not requested, redirect to home
+  if (req.session.eg) {res.redirect('/go')
+  } else {res.redirect('/')}
+}
+
+/**
+ * Page controller for executing an example.
+ * Uses the session.eg saved parameter
+ */
+function goPageController (req, res, next) {
   // getting the API client ready
   apiClient = new docusign.ApiClient();
-  console.log(`\nReceived access_token: ${req.user.accessToken.substring(0,15)}...`);
-  let expires = moment().add(req.user.expiresIn, 's');
-  console.log(`Expires at ${expires.format("dddd, MMMM Do YYYY, h:mm:ss a")}`);
   apiClient.addDefaultHeader('Authorization', 'Bearer ' + req.user.accessToken);
 
   // The DocuSign Passport strategy looks up the user's account information via OAuth::userInfo.
@@ -127,6 +171,7 @@ function dsLoginCB2 (req, res, next) {
   docusign.Configuration.default.setDefaultApiClient(apiClient);
   // Execute an example.
   eg = req.session.eg; // retrieve the requested example number
+  req.session.eg = false; // reset
 
   Promise.resolve()
   // Send an envelope via email
@@ -158,8 +203,19 @@ function dsLoginCB2 (req, res, next) {
     } else {
       res.send( `${prefix} ${result.msg} ${suffix}` );
     }
-    next();
   })
+}
+
+/**
+ * Page controller for processing the OAuth callback
+ */
+function dsPingController (req, res) {
+  // This function is called periodically via AJAX from the
+  // DocuSign Signing Ceremony. The AJAX calls include cookiers and
+  // will keep our session fresh.
+  // Any return values are ignored.
+  console.log ('\nDocuSign PING received.');
+  res.send()
 }
 
 /**
@@ -441,7 +497,7 @@ function embeddedSigning(accountId) {
       return result.envelopeId;
     })
     .then ((envelopeId) =>
-      // Step 2 call createRecipientView() to generate the signing URL!
+      // Step 2 call createRecipientView() to generate the signing URL
       createRecipientView(accountId, envelopeId, clientUserId)
     )
     .catch ((err) => {
@@ -467,10 +523,10 @@ function embeddedSigning(accountId) {
 function createRecipientView(accountId, envelopeId, clientUserId) {
   // instantiate a new EnvelopesApi object
   let envelopesApi = new docusign.EnvelopesApi();
+  let viewRequest = new docusign.RecipientViewRequest();
 
   // set the url where you want the recipient to go once they are done signing
   // should typically be a callback route somewhere in your app
-  let viewRequest = new docusign.RecipientViewRequest();
   viewRequest.returnUrl = hostUrl;
   // How has your app authenticated the user? In addition to your app's
   // authentication, you can include authenticate steps from DocuSign.
@@ -481,6 +537,16 @@ function createRecipientView(accountId, envelopeId, clientUserId) {
   viewRequest.email = signerEmail;
   viewRequest.userName = signerName;
   viewRequest.clientUserId = clientUserId;
+
+  // DocuSign recommends that you redirect to DocuSign for the
+  // Signing Ceremony. There are multiple ways to save state.
+  // To maintain your application's session, use the pingUrl
+  // parameter. It causes the DocuSign Signing Ceremony web page
+  // (not the DocuSign server) to send pings via AJAX to your
+  // app,
+  viewRequest.pingFrequency = 600; // seconds
+  // NOTE: The pings will only be sent if the pingUrl is an https address
+  viewRequest.pingUrl = `${hostUrl}/dsping`;
 
   // call the CreateRecipientView API
   let createRecipientView_promise = make_promise(envelopesApi, 'createRecipientView');
