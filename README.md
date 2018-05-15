@@ -1,11 +1,18 @@
 # DocuSign Code Examples
 
-This repo contains code examples for the DocuSign eSignature REST API. You can sign up for a free [developer sandbox](https://www.docusign.com/developer-center). 
+This repo contains code examples for the DocuSign eSignature REST API.
 
-Requirements
-============
+The examples authenticate the user via the DocuSign OAuth
+[Authorization Code Grant](https://developers.docusign.com/esign-rest-api/guides/authentication/oauth2-code-grant)
+flow.
 
-All of the code examples make use of the DocuSign open source SDKs, which are free and under the MIT license. You can download the SDKs from GitHub:
+
+You can sign up for a free [developer sandbox](https://www.docusign.com/developer-center).
+
+## Requirements
+
+All of the code examples make use of the DocuSign MIT-licensed SDKs.
+You can download the SDKs from GitHub:
 
 * [DocuSign C# SDK](https://github.com/docusign/docusign-csharp-client)
 * [DocuSign Java SDK](https://github.com/docusign/docusign-java-client)
@@ -15,18 +22,21 @@ All of the code examples make use of the DocuSign open source SDKs, which are fr
 * [DocuSign Python SDK](https://github.com/docusign/docusign-python-client)
 * [DocuSign Ruby SDK](https://github.com/docusign/docusign-ruby-client)
 
-Code Examples
-=============
+## Code Examples
 
-The samples all point to the DocuSign demo environment so you can use your free developer sandbox for testing. Most of the samples have variables such as auth keys or email address that need substituting of real values before running.
+The examples use the DocuSign demo environment so you can use your free
+developer sandbox account for testing.
 
-Examples currently exist in the following languages with additional ones in development:
+The examples include variables for the authentication keys,
+signer name, signer's email address and other settings that
+must be updated with real values before the example can be run.
+
+Examples are currently available in the following languages:
 
 * [C#](csharp)
 * [Java](java)
 * [Node.js](node)
 
-License
-=======
+## License
 
-The DocuSign CSharp Client is licensed under the following [License](LICENSE).
+These examples use the MIT [License](LICENSE).

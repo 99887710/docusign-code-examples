@@ -1,19 +1,22 @@
 {
   "name": "docusign-node-sample",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DocuSign Node.js SDK Samples",
   "main": "NodeSDKSamples.js",
   "scripts": {
-    "start": "node NodeSDKSamples.js"
+    "start": "node NodeSDKSamples.js",
+    "debug": "node  --inspect-brk NodeSDKSamples.js"
   },
   "dependencies": {
     "docusign-esign": "^3.2.2",
     "express": "^4.16.3",
     "express-session": "^1.15.6",
+    "fs-extra": "^6.0.1",
+    "moment": "^2.22.1",
     "passport": "^0.4.0"
   },
   "engines": {
-    "node": "4.0.0"
+    "node": ">=8.10"
   },
   "repository": {
     "type": "git",
