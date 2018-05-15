@@ -1,6 +1,12 @@
 # DocuSign Code Examples
 
 This repo contains code examples for the DocuSign eSignature REST API.
+
+The examples authenticate the user via the DocuSign OAuth
+[Authorization Code Grant](https://developers.docusign.com/esign-rest-api/guides/authentication/oauth2-code-grant)
+flow.
+
+
 You can sign up for a free [developer sandbox](https://www.docusign.com/developer-center).
 
 ## Requirements

@@ -1,6 +1,12 @@
 # DocuSign Node.js SDK Samples
 
-Code examples for the DocuSign Node.js SDK. These examples demonstrate:
+Code examples for the DocuSign Node.js SDK. The example
+authenticates the user via the
+DocuSign OAuth
+[Authorization Code Grant](https://developers.docusign.com/esign-rest-api/guides/authentication/oauth2-code-grant)
+flow.
+
+The example enables you to try nine basic API operations:
 * Sending an Envelope via email
 * Embeddded Signing Ceremony
 * Sending an envelope using a template
@@ -40,7 +46,7 @@ Code examples for the DocuSign Node.js SDK. These examples demonstrate:
 
 ## Running the Node.JS examples
 
-1. Execute **npm run** in a console/terminal window.
+1. In the **docusign-code-examples/node** directory, execute **npm start** in a console/terminal window.
    The examples will send logging information to the console/terminal window.
 2. Use your browser to open http://localhost:3000
 
