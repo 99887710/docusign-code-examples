@@ -8,7 +8,7 @@ flow.
 
 The example enables you to try nine basic API operations:
 * Sending an Envelope via email
-* Embeddded Signing Ceremony
+* Embedded Signing Ceremony
 * Sending an envelope using a template
 * Embedded Sending tool
 * Embedded DocuSign console
