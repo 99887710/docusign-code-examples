@@ -15,11 +15,11 @@ using System.Web.Http;
 
 namespace SdkTests
 {
-    // This OAuthFlowTests class demostrates the DocuSign OAuth2 Authorization Code grant flow. Other API
+    // This OAuthFlowTests class demonstrates the DocuSign OAuth2 Authorization Code grant flow. Other API
     // authentication methods are available including JWT auth.
 
-    // Prerequisites - Register your Application in the Docusign Admin console
-    // Add an application: 
+    // Prerequisites - Register your Application in the DocuSign Admin console
+    // Add an application:
     //  1. Make note of the integrator key (client_id below);
     //  2. Set a client Secret (client_secret below);
     //  3. Set a callback Url (redirect_uri below).
@@ -31,7 +31,7 @@ namespace SdkTests
     // 4. DocuSign authenticates the user and redirects the browser to the specified redirect_uri with a code;
     // 5. Your application exchanges the code for an access_token using DocuSign OAuth token endpoint;
     // 6. The access_token and a refresh_token are returned;
-    // 7. The application uses the access_token to make API calls to the REST API. The refresh_token may 
+    // 7. The application uses the access_token to make API calls to the REST API. The refresh_token may
     //    be stored away and used to retrieve a new access_token when the token expires.
 
     public class CSharpSDKSamples
@@ -39,13 +39,13 @@ namespace SdkTests
         // Point to DocuSign Demo (sandbox) environment for requests
         public const string RestApiUrl = "https://demo.docusign.net/restapi";
 
-        // These items are all registered at the DocuSign Admin console and are required 
+        // These items are all registered at the DocuSign Admin console and are required
         // to perform the OAuth flow.
         public const string client_id = "{CLIENT_ID}";
         public const string client_secret = "{CLIENT_SECRET}";
         public const string redirect_uri = "{REDIRECT_URI}";
 
-        // This is an application-speicifc param that may be passed around during the OAuth
+        // This is an application-specific param that may be passed around during the OAuth
         // flow. It allows the app to track its flow, in addition to more security.
         public const string stateOptional = "testState";
 
@@ -69,7 +69,7 @@ namespace SdkTests
         static void Main(String[] args)
         {
             /////////////////////////////////////////////////////////////////
-            // Run Code Samples        
+            // Run Code Samples
             /////////////////////////////////////////////////////////////////
             CSharpSDKSamples samples = new CSharpSDKSamples();
 
@@ -77,13 +77,13 @@ namespace SdkTests
             samples.OAuthAuthorizationCodeFlowTest();
 
             // un-comment a sample to run the workflow
-            //samples.createEnvelope(AccountId);
+            //samples.CreateEnvelope(AccountId);
 
-            // create envelope with an embedded recipient 
-            //EnvelopeSummary result = samples.createEnvelopeWithEmbeddedRecipient(AccountId);
+            // create envelope with an embedded recipient
+            //EnvelopeSummary result = samples.CreateEnvelopeWithEmbeddedRecipient(AccountId);
 
             // create envelope then generate signing URL (recipient view)
-            //EnvelopeSummary result = samples.createEnvelopeWithEmbeddedRecipient(AccountId);
+            //EnvelopeSummary result = samples.CreateEnvelopeWithEmbeddedRecipient(AccountId);
             //samples.EmbeddedSigning(AccountId, result.EnvelopeId);
 
             // embed the tag and sender view (embedded sender view)
@@ -120,7 +120,7 @@ namespace SdkTests
 
             WaitForCallbackEvent = new ManualResetEvent(false);
 
-            // Launch a self-hosted web server to accepte the redirect_uri call
+            // Launch a self-hosted web server to accept the redirect_uri call
             // after the user finishes authentication.
             using (WebApp.Start<Startup>("http://localhost:3000"))
             {
@@ -137,10 +137,10 @@ namespace SdkTests
             Trace.WriteLine("Access_token: " + accessToken);
 
             /////////////////////////////////////////////////////////////////
-            // STEP 1: Get Base URI and Account ID        
+            // STEP 1: Get Base URI and Account ID
             /////////////////////////////////////////////////////////////////
 
-            // login call is available in the authentication api 
+            // login call is available in the authentication api
             AuthenticationApi authApi = new AuthenticationApi();
             LoginInformation loginInfo = authApi.Login();
 
@@ -152,7 +152,7 @@ namespace SdkTests
             Trace.WriteLine("base_uri: " + BaseUri);
         }
 
-        public EnvelopeSummary createEnvelope(string accountId)
+        public EnvelopeSummary CreateEnvelope(string accountId)
         {
             // Read a file from disk to use as a document.
             byte[] fileBytes = File.ReadAllBytes("test.pdf");
@@ -169,7 +169,7 @@ namespace SdkTests
             envDef.Documents = new List<Document>();
             envDef.Documents.Add(doc);
 
-            // Add a recipient to sign the documeent
+            // Add a recipient to sign the document
             Signer signer = new Signer();
             signer.Email = "{USER_EMAIL}";
             signer.Name = "{USER_NAME}";
@@ -203,13 +203,13 @@ namespace SdkTests
             return envelopeSummary;
         }
 
-        public EnvelopeSummary createEnvelopeFromTemplate(string accountId)
+        public EnvelopeSummary CreateEnvelopeFromTemplate(string accountId)
         {
             EnvelopeDefinition envDef = new EnvelopeDefinition();
             envDef.EmailSubject = "[DocuSign C# SDK] - Please sign this doc";
 
             // assign recipient to template role by setting name, email, and role name.  Note that the
-            // template role name must match the placeholder role name saved in your account template.  
+            // template role name must match the placeholder role name saved in your account template.
             TemplateRole tRole = new TemplateRole();
             tRole.Email = "{USER_EMAIL}";
             tRole.Name = "{USER_NAME}";
@@ -234,7 +234,7 @@ namespace SdkTests
             return envelopeSummary;
         }
 
-        public EnvelopeSummary createEnvelopeWithEmbeddedRecipient(string accountId)
+        public EnvelopeSummary CreateEnvelopeWithEmbeddedRecipient(string accountId)
         {
             // Read a file from disk to use as a document.
             byte[] fileBytes = File.ReadAllBytes("test.pdf");
@@ -251,7 +251,7 @@ namespace SdkTests
             envDef.Documents = new List<Document>();
             envDef.Documents.Add(doc);
 
-            // Add a recipient to sign the documeent
+            // Add a recipient to sign the document
             Signer signer = new Signer();
             signer.Email = "{USER_EMAIL}";
             signer.Name = "{USER_NAME}";
@@ -338,7 +338,7 @@ namespace SdkTests
             ReturnUrlRequest urlRequest = new ReturnUrlRequest();
             urlRequest.ReturnUrl = "https://www.docusign.com";
 
-            // Adding the envelopeId start sthe console with the envelope open
+            // Adding the envelopeId starts the console with the envelope open
             EnvelopesApi envelopesApi = new EnvelopesApi();
             ViewUrl viewUrl = envelopesApi.CreateConsoleView(accountId, null);
 
@@ -406,7 +406,7 @@ namespace SdkTests
             String filePath = String.Empty;
             FileStream fs = null;
 
-            for (int i = 0; i < docsList.EnvelopeDocuments.Count; i++ ) 
+            for (int i = 0; i < docsList.EnvelopeDocuments.Count; i++ )
             {
                 // GetDocument() API call returns a MemoryStream
                 MemoryStream docStream = (MemoryStream)envelopesApi.GetDocument(accountId, docsList.EnvelopeId, docsList.EnvelopeDocuments[i].DocumentId);
@@ -421,14 +421,14 @@ namespace SdkTests
         }
     } // end class
 
-    // Configuration for self-hosted Web service. THis allows the test to call out to the
-    // Account Server endponts and have the resulting browser login session redirect
+    // Configuration for self-hosted Web service. This allows the test to call out to the
+    // Account Server endpoints and have the resulting browser login session redirect
     // directly into this test.
     public class Startup
     {
         public void Configuration(IAppBuilder app)
         {
-            // Configure Web API for self-host. 
+            // Configure Web API for self-host.
             var config = new HttpConfiguration();
             config.Routes.MapHttpRoute(
                 name: "DefaultApi",
@@ -440,15 +440,15 @@ namespace SdkTests
         }
     }
 
-    // API Controller and action called via the redirect_uri registered for thie client_id
+    // API Controller and action called via the redirect_uri registered for this client_id
     public class callbackController : ApiController
     {
-        // GET auth/callback 
+        // GET auth/callback
         public HttpResponseMessage Get()
         {
             CSharpSDKSamples.AccessCode = Request.RequestUri.ParseQueryString()["code"];
 
-            // state is app-specific string that may be passed around for validation.
+            // state is an app-specific string that may be passed around for validation.
             CSharpSDKSamples.StateValue = Request.RequestUri.ParseQueryString()["state"];
 
             HttpResponseMessage response = new HttpResponseMessage();
