@@ -77,13 +77,13 @@ namespace SdkTests
             samples.OAuthAuthorizationCodeFlowTest();
 
             // un-comment a sample to run the workflow
-            //samples.createEnvelope(AccountId);
+            //samples.CreateEnvelope(AccountId);
 
             // create envelope with an embedded recipient
-            //EnvelopeSummary result = samples.createEnvelopeWithEmbeddedRecipient(AccountId);
+            //EnvelopeSummary result = samples.CreateEnvelopeWithEmbeddedRecipient(AccountId);
 
             // create envelope then generate signing URL (recipient view)
-            //EnvelopeSummary result = samples.createEnvelopeWithEmbeddedRecipient(AccountId);
+            //EnvelopeSummary result = samples.CreateEnvelopeWithEmbeddedRecipient(AccountId);
             //samples.EmbeddedSigning(AccountId, result.EnvelopeId);
 
             // embed the tag and sender view (embedded sender view)
@@ -152,7 +152,7 @@ namespace SdkTests
             Trace.WriteLine("base_uri: " + BaseUri);
         }
 
-        public EnvelopeSummary createEnvelope(string accountId)
+        public EnvelopeSummary CreateEnvelope(string accountId)
         {
             // Read a file from disk to use as a document.
             byte[] fileBytes = File.ReadAllBytes("test.pdf");
@@ -203,7 +203,7 @@ namespace SdkTests
             return envelopeSummary;
         }
 
-        public EnvelopeSummary createEnvelopeFromTemplate(string accountId)
+        public EnvelopeSummary CreateEnvelopeFromTemplate(string accountId)
         {
             EnvelopeDefinition envDef = new EnvelopeDefinition();
             envDef.EmailSubject = "[DocuSign C# SDK] - Please sign this doc";
@@ -234,7 +234,7 @@ namespace SdkTests
             return envelopeSummary;
         }
 
-        public EnvelopeSummary createEnvelopeWithEmbeddedRecipient(string accountId)
+        public EnvelopeSummary CreateEnvelopeWithEmbeddedRecipient(string accountId)
         {
             // Read a file from disk to use as a document.
             byte[] fileBytes = File.ReadAllBytes("test.pdf");
@@ -421,7 +421,7 @@ namespace SdkTests
         }
     } // end class
 
-    // Configuration for self-hosted Web service. THis allows the test to call out to the
+    // Configuration for self-hosted Web service. This allows the test to call out to the
     // Account Server endpoints and have the resulting browser login session redirect
     // directly into this test.
     public class Startup
@@ -448,7 +448,7 @@ namespace SdkTests
         {
             CSharpSDKSamples.AccessCode = Request.RequestUri.ParseQueryString()["code"];
 
-            // state is app-specific string that may be passed around for validation.
+            // state is an app-specific string that may be passed around for validation.
             CSharpSDKSamples.StateValue = Request.RequestUri.ParseQueryString()["state"];
 
             HttpResponseMessage response = new HttpResponseMessage();
