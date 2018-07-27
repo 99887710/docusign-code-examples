@@ -20,7 +20,7 @@ The example enables you to try nine basic API operations:
 ## Requirements
 * The C# examples require Microsoft .NET version 4.5 or later.
 
-## Dependencies
+## NuGet Dependencies
 * DocuSign.eSign.dll
 * Microsoft.AspNet.WebApi.Owin
 * Microsoft.Owin.Hosting version **3.1.0** (for compatibility with .NET v4.5)
